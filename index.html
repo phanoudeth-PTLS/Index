@@ -2942,3 +2942,24 @@ const _P = atob('TWljcm90ZWNAMjAyNg=='); // Microtec@2026
 function doLogin() {
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginErr');
+  if (!u || !p) { err.textContent = 'ກະລຸນາໃສ່ Username ແລ້ວ Password'; return; }
+  if (u === _U && p === _P) {
+    sessionStorage.setItem('mic_auth','1');
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.add('visible');
+  } else {
+    err.textContent = '❌ Username ຫຼື Password ບໍ່ຖືກຕ້ອງ';
+    document.getElementById('loginPass').value = '';
+  }
+}
+
+// Auto-unlock if already logged in this session
+if (sessionStorage.getItem('mic_auth') === '1') {
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('mainApp').classList.add('visible');
+}
+</script>
+
+</body>
+</html>
