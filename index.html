@@ -1296,7 +1296,7 @@ const PS = 100;
 const pg = {d:0, r:0, ps:0, pr:0};
 const charts = {};
 let DET = null;
-let GY='', GM='';
+let GY='', GM='', GFROM=null, GTO=null;
 let fsaHandle=null, arTimer=null;
 const FSA = 'showOpenFilePicker' in window;
 
@@ -1364,16 +1364,29 @@ function applyGlobal() {
   const info = (GY||GM) ? (GY||'All')+' / '+(GM?mn(GM):'All Months') : 'All Data';
   document.getElementById('gInfo').textContent = info;
   document.getElementById('chartSub').textContent = info;
-  // Sync to tab date pickers (set From/To to cover the selected month/year)
+  // Compute global range and sync tab date pickers.
+  // Selecting a month covers from that month's 1st up to TODAY (the current date).
+  // Selecting only a year covers that whole year.
   if (GY||GM) {
-    const y = GY || new Date().getFullYear();
-    const m = GM ? parseInt(GM) : null;
-    const from = m ? `${y}-${String(m).padStart(2,'0')}-01` : `${y}-01-01`;
-    const lastDay = m ? new Date(y, m, 0).getDate() : 31;
-    const to   = m ? `${y}-${String(m).padStart(2,'0')}-${lastDay}` : `${y}-12-31`;
+    const now = new Date();
+    const y = GY ? parseInt(GY) : now.getFullYear();
+    if (GM) {
+      const m = parseInt(GM);
+      GFROM = new Date(y, m-1, 1, 0,0,0,0);
+      GTO   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23,59,59,999);
+      // If the chosen month is in the future, just cover that single month
+      if (GFROM > GTO) GTO = new Date(y, m, 0, 23,59,59,999);
+    } else {
+      GFROM = new Date(y, 0, 1, 0,0,0,0);
+      GTO   = new Date(y, 11, 31, 23,59,59,999);
+    }
+    const isoD = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const from = isoD(GFROM), to = isoD(GTO);
     ['d_F','r_F','pr_F'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=from;});
     ['d_T','r_T','pr_T'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=to;});
     Object.keys(pg).forEach(k=>pg[k]=0);
+  } else {
+    GFROM = null; GTO = null;
   }
   renderKPIs();
   renderCharts();
@@ -1394,15 +1407,23 @@ function mn(m) {
   return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)];
 }
 
+// True if a "YYYY-MM" bucket falls within the active global range.
+function inGBucket(y, mo) {
+  if ((!GY && !GM) || !GFROM) return true;
+  const key   = parseInt(y)*12 + (parseInt(mo)-1);
+  const fromK = GFROM.getFullYear()*12 + GFROM.getMonth();
+  const toK   = GTO.getFullYear()*12 + GTO.getMonth();
+  return key >= fromK && key <= toK;
+}
 function fSum(obj) {
   return Object.entries(obj||{}).reduce((s,[k,v])=>{
     const [y,mo]=k.split('-');
-    if(GY&&y!==GY)return s; if(GM&&mo!==GM)return s; return s+v;
+    return inGBucket(y,mo) ? s+v : s;
   },0);
 }
 function fObj(obj) {
   return Object.fromEntries(Object.entries(obj||{}).filter(([k])=>{
-    const [y,mo]=k.split('-'); return(!GY||y===GY)&&(!GM||mo===GM);
+    const [y,mo]=k.split('-'); return inGBucket(y,mo);
   }));
 }
 
@@ -1428,8 +1449,8 @@ function matchGlobal(dateStr) {
   if (!GY && !GM) return true;
   const d = parseAnyDate(dateStr);
   if (!d) return false;
-  if (GY && d.getFullYear().toString() !== GY) return false;
-  if (GM && (d.getMonth()+1).toString().padStart(2,'0') !== GM) return false;
+  if (GFROM && d < GFROM) return false;
+  if (GTO && d > GTO) return false;
   return true;
 }
 
@@ -2921,24 +2942,3 @@ const _P = atob('TWljcm90ZWNAMjAyNg=='); // Microtec@2026
 function doLogin() {
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
-  const err = document.getElementById('loginErr');
-  if (!u || !p) { err.textContent = 'ກະລຸນາໃສ່ Username ແລ້ວ Password'; return; }
-  if (u === _U && p === _P) {
-    sessionStorage.setItem('mic_auth','1');
-    document.getElementById('loginScreen').classList.add('hidden');
-    document.getElementById('mainApp').classList.add('visible');
-  } else {
-    err.textContent = '❌ Username ຫຼື Password ບໍ່ຖືກຕ້ອງ';
-    document.getElementById('loginPass').value = '';
-  }
-}
-
-// Auto-unlock if already logged in this session
-if (sessionStorage.getItem('mic_auth') === '1') {
-  document.getElementById('loginScreen').classList.add('hidden');
-  document.getElementById('mainApp').classList.add('visible');
-}
-</script>
-
-</body>
-</html>
