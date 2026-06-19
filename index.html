@@ -1308,10 +1308,12 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyZ5k2eIjpHiK9D
 // ວາງ URL ຂອງ Remarks Apps Script Web App ຂ້າງລຸ່ມນີ້
 // (ເບິ່ງໄຟລ໌ Remarks_GoogleAppsScript.js ສໍາລັບຄູ່ມືຕິດຕັ້ງ)
 const REMARKS_API_URL = 'https://script.google.com/macros/s/AKfycbwHf2rkhq2QQyj3kx4nyWdyYL59c5CoIDXkj5JleWNupchJGisVzn9QWrOD2oFsIJF7tA/exec';
+// Sentinel used to detect an un-configured URL. Must NOT equal a real deployed URL.
+const REMARKS_PLACEHOLDER = 'PASTE_YOUR_URL_HERE';
 let _kpi8Remarks = {};
 
 async function loadRemarks() {
-  if (!REMARKS_API_URL || REMARKS_API_URL === 'https://script.google.com/macros/s/AKfycby8dkgM8HbRsyAgKrplggzzaWNtezUBdxin6cEmpnwX-r0vbjf3_rPZvpAV35DDquLL/exec') {
+  if (!REMARKS_API_URL || REMARKS_API_URL === REMARKS_PLACEHOLDER) {
     // fallback: load from localStorage
     _kpi8Remarks = JSON.parse(localStorage.getItem('kpi8_remarks') || '{}');
     return;
@@ -1629,12 +1631,14 @@ async function saveRemark(safeKey, partName) {
   // Always update local cache
   _kpi8Remarks[partName] = input.value;
 
-  if (REMARKS_API_URL && REMARKS_API_URL !== 'https://script.google.com/macros/s/AKfycbwHf2rkhq2QQyj3kx4nyWdyYL59c5CoIDXkj5JleWNupchJGisVzn9QWrOD2oFsIJF7tA/exec') {
+  if (REMARKS_API_URL && REMARKS_API_URL !== REMARKS_PLACEHOLDER) {
     try {
       await fetch(REMARKS_API_URL, {
         method: 'POST',
         body: JSON.stringify({ part: partName, remark: input.value, updatedBy: 'Dashboard' })
       });
+      // also keep a local copy as offline cache
+      localStorage.setItem('kpi8_remarks', JSON.stringify(_kpi8Remarks));
     } catch(e) {
       // fallback to localStorage if API fails
       localStorage.setItem('kpi8_remarks', JSON.stringify(_kpi8Remarks));
