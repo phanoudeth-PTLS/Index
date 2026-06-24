@@ -1334,9 +1334,11 @@ async function loadRemarks() {
 document.addEventListener('DOMContentLoaded', () => {
   updateTs();
   loadRemarks(); // Load shared remarks from Google Sheets (or localStorage fallback)
-  if(APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'YOUR_APPS_SCRIPT_URL_HERE'){
+  // Data loads only after login. If a valid session key already exists, load now;
+  // otherwise the login screen stays up and loadFromGSheets runs on successful login.
+  if(API_KEY && DYNAMIC_URL && DYNAMIC_URL !== 'YOUR_APPS_SCRIPT_URL_HERE'){
     loadFromGSheets();
-  } else {
+  } else if(!DYNAMIC_URL || DYNAMIC_URL === 'YOUR_APPS_SCRIPT_URL_HERE'){
     // fallback: show empty dashboard with upload prompt
     DET = DETAIL_DATA;
     populateGlobalYears();
@@ -2636,6 +2638,18 @@ function toast(msg){
 let DYNAMIC_URL = localStorage.getItem('bcel_apps_url') || APPS_SCRIPT_URL;
 let AR_INTERVAL = parseInt(localStorage.getItem('bcel_ar_interval') || '300000');
 
+// ── Auth key (set after login). The data API only returns data with the correct key. ──
+let API_KEY = sessionStorage.getItem('mic_key') || '';
+async function authKey(pw){
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function withKey(u){
+  if(!u) return u;
+  const s = u.includes('?') ? '&' : '?';
+  return u + s + 'key=' + encodeURIComponent(API_KEY) + '&nocache=' + Date.now();
+}
+
 function openSettings(){
   document.getElementById('sUrlInput').value = DYNAMIC_URL;
   const iSel = document.getElementById('sIntervalSel');
@@ -2675,7 +2689,7 @@ async function loadFromGSheets(){
   const btn=document.getElementById('btnRefresh');
   if(btn){btn.textContent='⏳ Loading...';btn.disabled=true;}
   try{
-    const res=await fetch(url);
+    const res=await fetch(withKey(url));
     if(!res.ok)throw new Error('HTTP '+res.status);
     const json=await res.json();
     if(json.error)throw new Error(json.error);
@@ -2720,7 +2734,7 @@ function changeARInterval(val){
 async function loadFromGSheetsQuiet(){
   const url=DYNAMIC_URL; if(!url)return;
   try{
-    const res=await fetch(url);
+    const res=await fetch(withKey(url));
     if(!res.ok)return;
     const json=await res.json();
     if(json.error)return;
@@ -2935,29 +2949,82 @@ renderAnalysis = function(td,tr,net,psCount,prQty,prItems,crDisp,crRet,crPendQty
 </div><!-- /mainApp -->
 
 <script>
-// ── LOGIN AUTH ────────────────────────────────────────────
-const _U = atob('YWRtaW4=');           // admin
-const _P = atob('TWljcm90ZWNAMjAyNg=='); // Microtec@2026
+// ── LOGIN AUTH (server-validated) ──────────────────────────
+// No password is stored in this file. The username 'admin' is cosmetic; the real
+// gate is the password, which is verified by the data Apps Script — it only returns
+// data when the correct key (SHA-256 of the password) is supplied.
 
-function doLogin() {
+// Auto-logout after 20 minutes of inactivity
+function _idleReset(){ if(window._idleT) clearTimeout(window._idleT); window._idleT = setTimeout(_logout, 20*60*1000); }
+function _logout(){ try{ sessionStorage.removeItem('mic_auth'); sessionStorage.removeItem('mic_key'); }catch(e){} location.reload(); }
+function _startIdle(){ ['mousemove','keydown','click','scroll','touchstart'].forEach(ev=>document.addEventListener(ev,_idleReset,{passive:true})); _idleReset(); }
+
+async function doLogin() {
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
   const err = document.getElementById('loginErr');
+  const lockUntil = parseInt(localStorage.getItem('mic_lock_until')||'0',10);
+  if (Date.now() < lockUntil) {
+    err.textContent = '🔒 ລັອກໄວ້ ' + Math.ceil((lockUntil-Date.now())/60000) + ' ນາທີ (ລອງໃໝ່ພາຍຫຼັງ)';
+    return;
+  }
   if (!u || !p) { err.textContent = 'ກະລຸນາໃສ່ Username ແລ້ວ Password'; return; }
-  if (u === _U && p === _P) {
-    sessionStorage.setItem('mic_auth','1');
-    document.getElementById('loginScreen').classList.add('hidden');
-    document.getElementById('mainApp').classList.add('visible');
-  } else {
+  if (u.toLowerCase() !== 'admin') {
     err.textContent = '❌ Username ຫຼື Password ບໍ່ຖືກຕ້ອງ';
     document.getElementById('loginPass').value = '';
+    return;
+  }
+  const btn = document.querySelector('.login-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ ...'; }
+  try {
+    API_KEY = await authKey(p);
+    const sep = DYNAMIC_URL.includes('?') ? '&' : '?';
+    const res = await fetch(DYNAMIC_URL + sep + 'key=' + encodeURIComponent(API_KEY) + '&nocache=' + Date.now());
+    const json = await res.json();
+    if (json && !json.error && json['Support Part Request to BCEL'] !== undefined) {
+      sessionStorage.setItem('mic_key', API_KEY);
+      sessionStorage.setItem('mic_auth','1');
+      localStorage.removeItem('mic_fails');
+      localStorage.removeItem('mic_lock_until');
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('mainApp').classList.add('visible');
+      parseFromArrays(
+        json['Support Part Request to BCEL']||[],
+        json['BCEL Return part failed to MIC']||[],
+        json['MIC Pending to support BCEL']||[],
+        json['BCEL part pending Return to MIC']||[]
+      );
+      try {
+        document.getElementById('liveWrap').style.display='inline-flex';
+        document.getElementById('arWrap').style.display='inline-flex';
+        if(!arTimer && AR_INTERVAL>0) startAR();
+      } catch(e){}
+      _startIdle();
+    } else {
+      throw new Error('unauthorized');
+    }
+  } catch(e) {
+    API_KEY = '';
+    let fails = parseInt(localStorage.getItem('mic_fails')||'0',10) + 1;
+    if (fails >= 5) {
+      localStorage.setItem('mic_lock_until', String(Date.now() + 5*60000));
+      localStorage.removeItem('mic_fails');
+      err.textContent = '🔒 ລັອກ 5 ນາທີ (ໃສ່ຜິດຫຼາຍເທື່ອ)';
+    } else {
+      localStorage.setItem('mic_fails', String(fails));
+      err.textContent = '❌ Password ບໍ່ຖືກຕ້ອງ (ເຫຼືອ ' + (5-fails) + ' ເທື່ອ)';
+    }
+    document.getElementById('loginPass').value = '';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔐 ເຂົ້າລະບົບ'; }
   }
 }
 
-// Auto-unlock if already logged in this session
-if (sessionStorage.getItem('mic_auth') === '1') {
+// Auto-unlock if a valid session key exists (INIT loads the data)
+if (sessionStorage.getItem('mic_auth') === '1' && sessionStorage.getItem('mic_key')) {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('mainApp').classList.add('visible');
+  _startIdle();
 }
 </script>
 
