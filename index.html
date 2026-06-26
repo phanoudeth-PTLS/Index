@@ -742,7 +742,7 @@ select.fsel:focus {
 }
 
 /* Tables */
-.tbl-wrap { border-radius: var(--radius-sm); overflow: hidden; border: 1px solid #e2e8f0; }
+.tbl-wrap { border-radius: var(--radius-sm); overflow-y: auto; overflow-x: auto; max-height: 560px; border: 1px solid #e2e8f0; }
 table {
   border-collapse: collapse;
   width: 100%;
@@ -2152,7 +2152,7 @@ function render_ps(){
   const sl=rows.slice(pg.ps*PS,(pg.ps+1)*PS);
   document.getElementById('b_ps').innerHTML=sl.length?sl.map(r=>{
     const days=daysWaiting(r.date);
-    return `<tr><td>${hesc(r.no)}</td><td style="white-space:nowrap">${hesc(r.date)||'—'}</td>
+    return `<tr><td>${hesc(r.no)}</td><td style="white-space:nowrap">${fmtD(r.date)}</td>
      ${daysCell(days)}
      <td>${hesc(r.ref)||'—'}</td><td class="ell">${hesc(r.branch)||'—'}</td>
      <td>${hesc(r.atm_type)||'—'}</td><td>${hesc(r.serial)||'—'}</td>
@@ -2957,76 +2957,4 @@ renderAnalysis = function(td,tr,net,psCount,prQty,prItems,crDisp,crRet,crPendQty
 // Auto-logout after 20 minutes of inactivity
 function _idleReset(){ if(window._idleT) clearTimeout(window._idleT); window._idleT = setTimeout(_logout, 20*60*1000); }
 function _logout(){ try{ sessionStorage.removeItem('mic_auth'); sessionStorage.removeItem('mic_key'); }catch(e){} location.reload(); }
-function _startIdle(){ ['mousemove','keydown','click','scroll','touchstart'].forEach(ev=>document.addEventListener(ev,_idleReset,{passive:true})); _idleReset(); }
-
-async function doLogin() {
-  const u = document.getElementById('loginUser').value.trim();
-  const p = document.getElementById('loginPass').value;
-  const err = document.getElementById('loginErr');
-  const lockUntil = parseInt(localStorage.getItem('mic_lock_until')||'0',10);
-  if (Date.now() < lockUntil) {
-    err.textContent = '🔒 ລັອກໄວ້ ' + Math.ceil((lockUntil-Date.now())/60000) + ' ນາທີ (ລອງໃໝ່ພາຍຫຼັງ)';
-    return;
-  }
-  if (!u || !p) { err.textContent = 'ກະລຸນາໃສ່ Username ແລ້ວ Password'; return; }
-  if (u.toLowerCase() !== 'admin') {
-    err.textContent = '❌ Username ຫຼື Password ບໍ່ຖືກຕ້ອງ';
-    document.getElementById('loginPass').value = '';
-    return;
-  }
-  const btn = document.querySelector('.login-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ ...'; }
-  try {
-    API_KEY = await authKey(p);
-    const sep = DYNAMIC_URL.includes('?') ? '&' : '?';
-    const res = await fetch(DYNAMIC_URL + sep + 'key=' + encodeURIComponent(API_KEY) + '&nocache=' + Date.now());
-    const json = await res.json();
-    if (json && !json.error && json['Support Part Request to BCEL'] !== undefined) {
-      sessionStorage.setItem('mic_key', API_KEY);
-      sessionStorage.setItem('mic_auth','1');
-      localStorage.removeItem('mic_fails');
-      localStorage.removeItem('mic_lock_until');
-      document.getElementById('loginScreen').classList.add('hidden');
-      document.getElementById('mainApp').classList.add('visible');
-      parseFromArrays(
-        json['Support Part Request to BCEL']||[],
-        json['BCEL Return part failed to MIC']||[],
-        json['MIC Pending to support BCEL']||[],
-        json['BCEL part pending Return to MIC']||[]
-      );
-      try {
-        document.getElementById('liveWrap').style.display='inline-flex';
-        document.getElementById('arWrap').style.display='inline-flex';
-        if(!arTimer && AR_INTERVAL>0) startAR();
-      } catch(e){}
-      _startIdle();
-    } else {
-      throw new Error('unauthorized');
-    }
-  } catch(e) {
-    API_KEY = '';
-    let fails = parseInt(localStorage.getItem('mic_fails')||'0',10) + 1;
-    if (fails >= 5) {
-      localStorage.setItem('mic_lock_until', String(Date.now() + 5*60000));
-      localStorage.removeItem('mic_fails');
-      err.textContent = '🔒 ລັອກ 5 ນາທີ (ໃສ່ຜິດຫຼາຍເທື່ອ)';
-    } else {
-      localStorage.setItem('mic_fails', String(fails));
-      err.textContent = '❌ Password ບໍ່ຖືກຕ້ອງ (ເຫຼືອ ' + (5-fails) + ' ເທື່ອ)';
-    }
-    document.getElementById('loginPass').value = '';
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔐 ເຂົ້າລະບົບ'; }
-  }
-}
-
-// Auto-unlock if a valid session key exists (INIT loads the data)
-if (sessionStorage.getItem('mic_auth') === '1' && sessionStorage.getItem('mic_key')) {
-  document.getElementById('loginScreen').classList.add('hidden');
-  document.getElementById('mainApp').classList.add('visible');
-  _startIdle();
-}
-</script>
-
-</body>
-</html>
+function _startIdle(){ ['mousem
