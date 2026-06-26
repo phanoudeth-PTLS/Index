@@ -1484,7 +1484,7 @@ function renderKPIs() {
 
   // KPI 2 — Pending Support
   let psCount = SUMMARY.total_pending_support;
-  if (DET) psCount = (GY||GM) ? DET.pending_support.filter(r=>matchGlobal(r.date)).length : DET.pending_support.length;
+  if (DET) { const psSrc = (GY||GM) ? DET.pending_support.filter(r=>matchGlobal(r.date)) : DET.pending_support; psCount = psSrc.reduce((s,r)=>s+(r.qty||0),0); }
 
   // KPI 3 — Pending Return
   let prQty=SUMMARY.total_pending_return_qty, prItems=SUMMARY.total_pending_return_items;
@@ -1510,13 +1510,13 @@ function renderKPIs() {
     crPendItems= crPR.length;
     // KPI 6: CR Pending Support — from pending_support sheet
     const crPS = DET.pending_support.filter(r=>(r.part||'').toUpperCase().includes(crKw));
-    crPendSup = crPS.length;
-    // Count overdue (date > 21 days ago)
+    crPendSup = crPS.reduce((s,r)=>s+(r.qty||0),0);
+    // Sum qty of overdue parts (older than OVERDUE_DAYS)
     crOverdue = crPS.filter(r => {
       const d = parseAnyDate(r.date);
       if (!d) return false;
       return (now - d) / (1000*60*60*24) > OVERDUE_DAYS;
-    }).length;
+    }).reduce((s,r)=>s+(r.qty||0),0);
   }
 
   // Animate
@@ -1561,7 +1561,7 @@ function renderKPIs() {
     td>0?`<span class="ins ${tr/td>0.9?'ins-warn':'ins-info'}">${(tr/td*100).toFixed(1)}% return rate</span>`:'',
   ]);
   setIns('ins2',[
-    psCount>20?`<span class="ins ins-warn">🔴 ${psCount} overdue requests</span>`
+    psCount>20?`<span class="ins ins-warn">🔴 ${psCount} units pending</span>`
               :`<span class="ins ins-up">✓ Under control</span>`
   ]);
   setIns('ins3',[
@@ -1853,7 +1853,7 @@ function renderAnalysis(td,tr,net,psCount,prQty,prItems,crDisp,crRet,crPendQty,c
 function checkAlert(){
   const msgs=[];
   if(SUMMARY.total_pending_return_qty>1000) msgs.push(`Pending return is <strong>${SUMMARY.total_pending_return_qty.toLocaleString()} units</strong> — follow-up needed.`);
-  if(SUMMARY.total_pending_support>20) msgs.push(`<strong>${SUMMARY.total_pending_support} requests</strong> awaiting dispatch.`);
+  if(SUMMARY.total_pending_support>20) msgs.push(`<strong>${SUMMARY.total_pending_support} units</strong> pending support.`);
   const b=document.getElementById('alertBox');
   if(msgs.length){document.getElementById('alertMsg').innerHTML=msgs.join(' &nbsp;|&nbsp; ');b.classList.remove('hidden');}
   else b.classList.add('hidden');
@@ -2262,7 +2262,7 @@ function parseFromArrays(ws2,ws4,ws3,ws5){
   SUMMARY.return_monthly=DET.return_monthly;
   SUMMARY.total_dispatch=Object.values(DET.dispatch_monthly||{}).reduce((a,b)=>a+b,0);
   SUMMARY.total_return=Object.values(DET.return_monthly||{}).reduce((a,b)=>a+b,0);
-  SUMMARY.total_pending_support=DET.pending_support.length;
+  SUMMARY.total_pending_support=DET.pending_support.reduce((s,r)=>s+(r.qty||0),0);
   SUMMARY.total_pending_return_qty=DET.pending_return.reduce((a,r)=>a+r.qty,0);
   SUMMARY.total_pending_return_items=DET.pending_return.length;
   SUMMARY.top_dispatch_parts=DET.top_dispatch_parts;
@@ -2337,7 +2337,7 @@ function procBuf(buf){
     SUMMARY.return_monthly   = DET.return_monthly;
     SUMMARY.total_dispatch   = Object.values(DET.dispatch_monthly||{}).reduce((a,b)=>a+b,0);
     SUMMARY.total_return     = Object.values(DET.return_monthly||{}).reduce((a,b)=>a+b,0);
-    SUMMARY.total_pending_support     = DET.pending_support.length;
+    SUMMARY.total_pending_support     = DET.pending_support.reduce((s,r)=>s+(r.qty||0),0);
     SUMMARY.total_pending_return_qty  = DET.pending_return.reduce((a,r)=>a+r.qty,0);
     SUMMARY.total_pending_return_items= DET.pending_return.length;
     SUMMARY.top_dispatch_parts        = DET.top_dispatch_parts;
@@ -2567,8 +2567,8 @@ renderKPIs = function(){
       crDisp=dispRows.filter(r=>(r.part_name||'').toUpperCase().includes(crKw)).reduce((s,r)=>s+r.qty,0);
       const prRows=(GY||GM)?DET.pending_return.filter(r=>matchGlobal(r.date)):DET.pending_return;
       crPendQty=prRows.filter(r=>(r.part_name||'').toUpperCase().includes(crKw)).reduce((s,r)=>s+r.qty,0);
-      crPendSup=DET.pending_support.filter(r=>(r.part||'').toUpperCase().includes(crKw)).length;
-      ps=(GY||GM)?DET.pending_support.filter(r=>matchGlobal(r.date)).length:DET.pending_support.length;
+      crPendSup=DET.pending_support.filter(r=>(r.part||'').toUpperCase().includes(crKw)).reduce((s,r)=>s+(r.qty||0),0);
+      ps=(GY||GM)?DET.pending_support.filter(r=>matchGlobal(r.date)).reduce((s,r)=>s+(r.qty||0),0):DET.pending_support.reduce((s,r)=>s+(r.qty||0),0);
       const fpr=(GY||GM)?DET.pending_return.filter(r=>matchGlobal(r.date)):DET.pending_return;
       prQty=fpr.reduce((s,r)=>s+r.qty,0);
     }
